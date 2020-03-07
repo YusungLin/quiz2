@@ -33,7 +33,10 @@ typedef union {
     };
 } xs;
 
-static inline bool xs_is_ptr(const xs *x) { return x->is_ptr; }
+static inline bool xs_is_ptr(const xs *x)
+{
+    return x->is_ptr;
+}
 static inline size_t xs_size(const xs *x)
 {
     return xs_is_ptr(x) ? x->size : 15 - x->space_left;
@@ -50,7 +53,10 @@ static inline size_t xs_capacity(const xs *x)
 #define xs_literal_empty() \
     (xs) { .space_left = 15 }
 
-static inline int ilog2(uint32_t n) { return 32 - __builtin_clz(n) - 1; }
+static inline int ilog2(uint32_t n)
+{
+    return 32 - __builtin_clz(n) - 1;
+}
 
 xs *xs_new(xs *x, const void *p)
 {
@@ -183,6 +189,27 @@ xs *xs_trim(xs *x, const char *trimset)
 #undef set_bit
 }
 
+void xs_copy(xs *dest, const xs *src)
+{
+    size_t dest_size = xs_size(dest), src_size = xs_size(src);
+    char *dest_str = xs_data(dest), *src_str = xs_data(src);
+
+    xs_grow(dest, src_size);
+
+    // CoW if long enough
+    if (xs_is_ptr(src)) {
+        free(xs_data(dest));
+        dest->ptr = src_str;
+    } else {
+        memcpy(dest_str, src, src_size + 1);
+    }
+    
+    if (xs_is_ptr(dest))
+        dest->size = src_size;
+    else
+        dest->space_left = 15 - src_size;
+}
+
 #include <stdio.h>
 
 int main()
@@ -191,10 +218,9 @@ int main()
     xs_trim(&string, "\n ");
     printf("[%s] : %2zu\n", xs_data(&string), xs_size(&string));
 
-    xs prefix = *xs_tmp("((((("), suffix = *xs_tmp(")))");
+    xs prefix = *xs_tmp("((("), suffix = *xs_tmp(")))");
     xs_concat(&string, &prefix, &suffix);
     printf("[%s] : %2zu\n", xs_data(&string), xs_size(&string));
 
     return 0;
 }
-
