@@ -189,6 +189,7 @@ xs *xs_trim(xs *x, const char *trimset)
 #undef set_bit
 }
 
+/* Implementation of strcpy */
 void xs_copy(xs *dest, const xs *src)
 {
     size_t dest_size = xs_size(dest), src_size = xs_size(src);
@@ -203,11 +204,59 @@ void xs_copy(xs *dest, const xs *src)
     } else {
         memcpy(dest_str, src, src_size + 1);
     }
-    
+
     if (xs_is_ptr(dest))
         dest->size = src_size;
     else
         dest->space_left = 15 - src_size;
+}
+
+/* Implementation of strtok */
+/* use free() to release the string returned */
+char *xs_token(xs *xs_parsed, const char *delimiters)
+{
+    static xs *xs_default = NULL;
+    if (xs_parsed)
+        xs_default = xs_parsed;
+    if (!xs_default || !xs_size(xs_default))
+        return NULL;
+    char *str = xs_data(xs_default);
+    size_t str_size = strlen(str), del_size = strlen(delimiters);
+
+    uint8_t mask[32] = {0};
+
+#define check_bit(byte) (mask[(uint8_t) byte / 8] & 1 << (uint8_t) byte % 8)
+#define set_bit(byte) (mask[(uint8_t) byte / 8] |= 1 << (uint8_t) byte % 8)
+
+    size_t begin_token, end_token;
+
+    // find token
+    for (int i = 0; i < del_size; ++i)
+        set_bit(delimiters[i]);
+    for (begin_token = 0; begin_token < str_size; ++begin_token)
+        if (!check_bit(str[begin_token]))
+            break;
+    for (end_token = begin_token; end_token < str_size; ++end_token)
+        if (check_bit(str[end_token]))
+            break;
+    end_token -= 1;
+
+    size_t token_size = end_token - begin_token + 1;
+    char *token = (char *) malloc(token_size + 1);
+    memcpy(token, str + begin_token, token_size);
+    token[token_size] = '\0';
+
+    // remove parsed section (include '\0')
+    for (int i = 0; i <= str_size - end_token; ++i)
+        str[i] = str[i + end_token + 1];
+    if (xs_is_ptr(xs_default))
+        xs_default->size -= end_token + 1;
+    else
+        xs_default->space_left += end_token + 1;
+
+    return token;
+#undef check_bit
+#undef set_bit
 }
 
 #include <stdio.h>
@@ -216,11 +265,28 @@ int main()
 {
     xs string = *xs_tmp("\n foobarbar \n\n\n");
     xs_trim(&string, "\n ");
-    printf("[%s] : %2zu\n", xs_data(&string), xs_size(&string));
+    printf("%s : %2zu\n", xs_data(&string), xs_size(&string));
 
-    xs prefix = *xs_tmp("((("), suffix = *xs_tmp(")))");
+    // testing xs_concat(xs *, xs *, xs *)
+    xs prefix = *xs_tmp("(((((("), suffix = *xs_tmp("))))))");
     xs_concat(&string, &prefix, &suffix);
-    printf("[%s] : %2zu\n", xs_data(&string), xs_size(&string));
+    printf("%s : %2zu\n", xs_data(&string), xs_size(&string));
 
+    // testing xs_token(xs *, xs *)
+    printf("\nbefore prefix: %s\n", xs_data(&prefix));
+    xs_copy(&prefix, &string);
+    printf("after prefix: %s\n\n", xs_data(&prefix));
+
+    // testing xs_token(xs *, const char *)
+    char *temp = NULL;
+    temp = xs_token(&string, "r");
+    while (temp) {
+        printf("%s\n", temp);
+        if (temp) {
+            free(temp);
+            temp = NULL;
+        }
+        temp = xs_token(&string, "r");
+    }
     return 0;
 }
