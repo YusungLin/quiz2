@@ -149,7 +149,7 @@ static inline xs *xs_newempty(xs *x)
 static inline xs *xs_free(xs *x)
 {
     if (xs_is_ptr(x)) {
-        if(xs_is_ref(x) >= 2)
+        if(xs_is_ref(x) > 1)
             ref_chg(xs_data(x), -1);
         else
             free(xs_data(x));
@@ -238,9 +238,8 @@ void xs_copy(xs *dest, const xs *src)
 
     // CoW if long enough
     if (xs_is_ptr(src)) {
-        free(xs_data(dest));
+        xs_free(dest);
         dest->ptr = src_str;
-        int i;
         if(xs_is_ref(src))
             ref_chg(xs_data(src), 1);
         else
