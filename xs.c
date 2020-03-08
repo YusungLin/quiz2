@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define COUNTER_SIZE 10
+
 typedef union {
     /* allow strings up to 15 bytes to stay on the stack
      * use the last byte as a null terminator and to store flags
@@ -105,6 +107,39 @@ xs *xs_grow(xs *x, size_t len)
     return x;
 }
 
+struct Ref_Counter {
+    char *ref;
+    size_t count;
+} ref_counter[COUNTER_SIZE];
+
+static inline size_t xs_is_ref(const xs *x)
+{
+    for (int i = 0; i < COUNTER_SIZE; ++i)
+        if (ref_counter[i].ref == xs_data(x))
+            return ref_counter[i].count;
+    return 0;
+}
+
+static inline void ref_add(char *str)
+{
+    for (int i = 0; i < COUNTER_SIZE; ++i)
+        if (!ref_counter[i].count) {
+            ref_counter[i].ref = str;
+            ref_counter[i].count = 2;
+            break;
+        }
+}
+
+// i can be +1 or -1
+static inline void ref_chg(const char *str, int i)
+{
+    for (int i = 0; i < COUNTER_SIZE; ++i)
+        if (ref_counter[i].ref == str) {
+            ref_counter[i].count += i;
+            break;
+        }
+}
+
 static inline xs *xs_newempty(xs *x)
 {
     *x = xs_literal_empty();
@@ -113,8 +148,12 @@ static inline xs *xs_newempty(xs *x)
 
 static inline xs *xs_free(xs *x)
 {
-    if (xs_is_ptr(x))
-        free(xs_data(x));
+    if (xs_is_ptr(x)) {
+        if(xs_is_ref(x) >= 2)
+            ref_chg(xs_data(x), -1);
+        else
+            free(xs_data(x));
+    }
     return xs_newempty(x);
 }
 
@@ -201,6 +240,11 @@ void xs_copy(xs *dest, const xs *src)
     if (xs_is_ptr(src)) {
         free(xs_data(dest));
         dest->ptr = src_str;
+        int i;
+        if(xs_is_ref(src))
+            ref_chg(xs_data(src), 1);
+        else
+            ref_add(xs_data(src));
     } else {
         memcpy(dest_str, src, src_size + 1);
     }
